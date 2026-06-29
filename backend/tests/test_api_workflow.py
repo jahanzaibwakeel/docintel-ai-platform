@@ -288,6 +288,89 @@ class ApiWorkflowTests(unittest.TestCase):
         self.assertEqual(after_delete.status_code, 200, after_delete.text)
         self.assertEqual(after_delete.json(), [])
 
+    def test_workspace_quotas_and_document_permissions(self) -> None:
+        owner_headers = self.register(email="quota-owner@example.com")
+        viewer_headers = self.register(email="quota-viewer@example.com")
+        workspace_id = self.client.get("/api/v1/workspaces", headers=owner_headers).json()[0]["id"]
+
+        added = self.client.post(
+            f"/api/v1/workspaces/{workspace_id}/members",
+            headers=owner_headers,
+            json={"email": "quota-viewer@example.com", "role": "viewer"},
+        )
+        self.assertEqual(added.status_code, 201, added.text)
+
+        quota = self.client.patch(
+            f"/api/v1/workspaces/{workspace_id}/quota",
+            headers=owner_headers,
+            json={"document_quota": 1, "page_quota": 10, "storage_quota_mb": 1},
+        )
+        self.assertEqual(quota.status_code, 200, quota.text)
+        self.assertEqual(quota.json()["document_quota"], 1)
+
+        with patch("app.api.routes.documents.process_document.delay"):
+            first = self.client.post(
+                f"/api/v1/documents?workspace_id={workspace_id}",
+                headers=owner_headers,
+                files={"file": ("quota.pdf", PDF_BYTES, "application/pdf")},
+            )
+            self.assertEqual(first.status_code, 201, first.text)
+            blocked = self.client.post(
+                f"/api/v1/documents?workspace_id={workspace_id}",
+                headers=owner_headers,
+                files={"file": ("blocked.pdf", PDF_BYTES, "application/pdf")},
+            )
+        self.assertEqual(blocked.status_code, 409, blocked.text)
+
+        usage = self.client.get(f"/api/v1/workspaces/{workspace_id}/usage", headers=owner_headers)
+        self.assertEqual(usage.status_code, 200, usage.text)
+        self.assertEqual(usage.json()["document_count"], 1)
+        document_id = first.json()["id"]
+
+        forbidden_annotation = self.client.post(
+            f"/api/v1/documents/{document_id}/annotations",
+            headers=viewer_headers,
+            json={"page_number": 1, "note": "Needs access"},
+        )
+        self.assertEqual(forbidden_annotation.status_code, 403, forbidden_annotation.text)
+
+        permission = self.client.post(
+            f"/api/v1/documents/{document_id}/permissions",
+            headers=owner_headers,
+            json={"email": "quota-viewer@example.com", "role": "commenter"},
+        )
+        self.assertEqual(permission.status_code, 201, permission.text)
+        self.assertEqual(permission.json()["role"], "commenter")
+
+        allowed_annotation = self.client.post(
+            f"/api/v1/documents/{document_id}/annotations",
+            headers=viewer_headers,
+            json={"page_number": 1, "note": "Allowed comment"},
+        )
+        self.assertEqual(allowed_annotation.status_code, 201, allowed_annotation.text)
+
+        forbidden_edit = self.client.patch(
+            f"/api/v1/documents/{document_id}/organization",
+            headers=viewer_headers,
+            json={"tags": ["viewer"], "favorite": True},
+        )
+        self.assertEqual(forbidden_edit.status_code, 403, forbidden_edit.text)
+
+        editor_permission = self.client.post(
+            f"/api/v1/documents/{document_id}/permissions",
+            headers=owner_headers,
+            json={"email": "quota-viewer@example.com", "role": "editor"},
+        )
+        self.assertEqual(editor_permission.status_code, 201, editor_permission.text)
+
+        allowed_edit = self.client.patch(
+            f"/api/v1/documents/{document_id}/organization",
+            headers=viewer_headers,
+            json={"tags": ["viewer"], "favorite": True},
+        )
+        self.assertEqual(allowed_edit.status_code, 200, allowed_edit.text)
+        self.assertEqual(allowed_edit.json()["tags"], ["viewer"])
+
     def test_saved_searches_are_user_owned_and_workspace_scoped(self) -> None:
         owner_headers = self.register(email="saved-owner@example.com")
         other_headers = self.register(email="saved-other@example.com")

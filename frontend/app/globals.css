@@ -232,6 +232,10 @@ textarea {
   color: #334155;
 }
 
+.metaGrid.compact {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .pdfFrame {
   height: 520px;
   border: 1px solid var(--line);

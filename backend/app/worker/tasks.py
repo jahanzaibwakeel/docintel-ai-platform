@@ -11,6 +11,7 @@ from app.services.lifecycle import cleanup_expired_documents
 from app.services.notifications import notify_document_failed, notify_document_ready
 from app.services.pdf import extract_pdf_pages
 from app.services.storage import get_storage
+from app.services.workspaces import assert_workspace_page_quota
 from app.worker.celery_app import celery_app
 
 
@@ -35,6 +36,8 @@ def process_document(document_id: int) -> None:
 
             local_path = get_storage().open_local_path(document.storage_path)
             pages = extract_pdf_pages(local_path)
+            if document.workspace_id is not None:
+                assert_workspace_page_quota(db, document.workspace_id, document.id, len(pages))
             text = "\n".join(f"\n\n[Page {page.page_number}]\n{page.text}" for page in pages).strip()
             chunks = chunk_pages(pages, settings.chunk_size, settings.chunk_overlap)
             diagnostics = {

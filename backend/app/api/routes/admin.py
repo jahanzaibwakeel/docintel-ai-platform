@@ -5,10 +5,11 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.metrics import metrics
 from app.models.document import Document, DocumentStatus
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
-from app.schemas.admin import AdminDocumentResponse, AdminStatsResponse, AdminUserResponse, AdminWorkspaceResponse
+from app.schemas.admin import AdminDocumentResponse, AdminOpsHealthResponse, AdminStatsResponse, AdminUserResponse, AdminWorkspaceResponse
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -34,6 +35,45 @@ def admin_stats(_: User = Depends(require_admin), db: Session = Depends(get_db))
         failed_documents=status_counts.get(DocumentStatus.failed, 0),
         processing_documents=status_counts.get(DocumentStatus.processing, 0),
         uploaded_documents=status_counts.get(DocumentStatus.uploaded, 0),
+    )
+
+
+@router.get("/ops/health", response_model=AdminOpsHealthResponse)
+def admin_ops_health(_: User = Depends(require_admin), db: Session = Depends(get_db)) -> AdminOpsHealthResponse:
+    stats = admin_stats(_, db)
+    failure_rows = db.execute(
+        select(Document, User.email)
+        .outerjoin(User, User.id == Document.owner_id)
+        .where(Document.status == DocumentStatus.failed)
+        .order_by(Document.processing_completed_at.desc().nullslast(), Document.created_at.desc(), Document.id.desc())
+        .limit(5)
+    ).all()
+    failures = [
+        AdminDocumentResponse(
+            id=document.id,
+            filename=document.filename,
+            owner_email=email,
+            workspace_id=document.workspace_id,
+            status=document.status,
+            document_type=document.document_type,
+            error_message=document.error_message,
+            created_at=document.created_at,
+            processing_started_at=document.processing_started_at,
+            processing_completed_at=document.processing_completed_at,
+        )
+        for document, email in failure_rows
+    ]
+    status = "degraded" if stats.failed_documents > 0 or stats.processing_documents > 20 else "ok"
+    return AdminOpsHealthResponse(
+        status=status,
+        users=stats.users,
+        workspaces=stats.workspaces,
+        documents=stats.documents,
+        processing_documents=stats.processing_documents,
+        uploaded_documents=stats.uploaded_documents,
+        failed_documents=stats.failed_documents,
+        recent_failures=failures,
+        metrics=metrics.snapshot(),
     )
 
 

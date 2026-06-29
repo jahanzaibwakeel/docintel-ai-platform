@@ -18,6 +18,9 @@ export type PasswordResetRequestResponse = {
 export type Workspace = {
   id: number;
   name: string;
+  document_quota: number | null;
+  page_quota: number | null;
+  storage_quota_mb: number | null;
   created_at: string;
 };
 
@@ -117,6 +120,30 @@ export type DocumentAnnotation = {
   updated_at: string;
 };
 
+export type DocumentPermission = {
+  id: number;
+  document_id: number;
+  user_id: number;
+  role: "viewer" | "commenter" | "editor";
+  granted_by_id: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorkspaceUsage = {
+  workspace_id: number;
+  document_count: number;
+  page_count: number;
+  storage_bytes: number;
+  storage_mb: number;
+  document_quota: number | null;
+  page_quota: number | null;
+  storage_quota_mb: number | null;
+  document_quota_used_percent: number | null;
+  page_quota_used_percent: number | null;
+  storage_quota_used_percent: number | null;
+};
+
 export type ExtractionDiagnostics = {
   ocr_enabled?: boolean;
   page_count?: number;
@@ -201,6 +228,12 @@ export type AdminStats = {
   failed_documents: number;
   processing_documents: number;
   uploaded_documents: number;
+};
+
+export type AdminOpsHealth = AdminStats & {
+  status: string;
+  recent_failures: AdminDocument[];
+  metrics: Record<string, number>;
 };
 
 export type AdminDocument = {

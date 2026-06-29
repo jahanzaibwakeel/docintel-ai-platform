@@ -1,4 +1,4 @@
-from app.models.document import Document, DocumentAnnotation, DocumentChunk, DocumentCollection, DocumentMessage, DocumentStatus, MessageRole
+from app.models.document import Document, DocumentAccessRole, DocumentAnnotation, DocumentChunk, DocumentCollection, DocumentMessage, DocumentPermission, DocumentStatus, MessageRole
 from app.models.notification import Notification
 from app.models.saved_search import SavedSearch
 from app.models.session import PasswordResetToken, RefreshToken
@@ -8,10 +8,12 @@ from app.models.workspace import AuditLog, Workspace, WorkspaceInvitation, Works
 __all__ = [
     "AuditLog",
     "Document",
+    "DocumentAccessRole",
     "DocumentAnnotation",
     "DocumentChunk",
     "DocumentCollection",
     "DocumentMessage",
+    "DocumentPermission",
     "DocumentStatus",
     "MessageRole",
     "Notification",

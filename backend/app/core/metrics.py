@@ -57,6 +57,21 @@ class MetricsRegistry:
             lines.append(f"{name}_seconds_sum{label_text} {total:g}")
         return "\n".join(lines) + "\n"
 
+    def snapshot(self) -> dict[str, float]:
+        with self._lock:
+            counters = dict(self._counters)
+            summaries = dict(self._summaries)
+        values: dict[str, float] = {}
+        for (name, labels), value in counters.items():
+            label_suffix = ".".join(f"{key}:{label_value}" for key, label_value in labels)
+            values[f"{name}{'.' + label_suffix if label_suffix else ''}.total"] = value
+        for (name, labels), (count, total) in summaries.items():
+            label_suffix = ".".join(f"{key}:{label_value}" for key, label_value in labels)
+            prefix = f"{name}{'.' + label_suffix if label_suffix else ''}"
+            values[f"{prefix}.seconds_count"] = count
+            values[f"{prefix}.seconds_sum"] = total
+        return values
+
     def reset(self) -> None:
         with self._lock:
             self._counters.clear()

@@ -3,7 +3,7 @@
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { Bot, Clock, Download, FileSearch, LogOut, Plus, RefreshCw, Search, Star, Tags, Trash2, Upload, UserPlus, ZoomIn, ZoomOut } from "lucide-react";
 import { api } from "@/lib/api";
-import type { AdminDocument, AdminStats, AiProviderStatus, AskResponse, AuditLog, ChatMessage, Citation, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentReviewStatus, NotificationItem, SavedSearch, SearchResult, User, Workspace, WorkspaceInvitation, WorkspaceMember } from "@/lib/types";
+import type { AdminDocument, AdminOpsHealth, AdminStats, AiProviderStatus, AskResponse, AuditLog, ChatMessage, Citation, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentPermission, DocumentReviewStatus, NotificationItem, SavedSearch, SearchResult, User, Workspace, WorkspaceInvitation, WorkspaceMember, WorkspaceUsage } from "@/lib/types";
 
 export function Dashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
   const [user, setUser] = useState<User | null>(null);
@@ -23,10 +23,17 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
   const [savedSearchName, setSavedSearchName] = useState("");
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
   const [collections, setCollections] = useState<DocumentCollection[]>([]);
+  const [workspaceUsage, setWorkspaceUsage] = useState<WorkspaceUsage | null>(null);
+  const [quotaDocuments, setQuotaDocuments] = useState("");
+  const [quotaPages, setQuotaPages] = useState("");
+  const [quotaStorage, setQuotaStorage] = useState("");
   const [newCollectionName, setNewCollectionName] = useState("");
   const [collectionFilter, setCollectionFilter] = useState<number | null>(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(null);
   const [annotations, setAnnotations] = useState<DocumentAnnotation[]>([]);
+  const [documentPermissions, setDocumentPermissions] = useState<DocumentPermission[]>([]);
+  const [permissionEmail, setPermissionEmail] = useState("");
+  const [permissionRole, setPermissionRole] = useState<DocumentPermission["role"]>("viewer");
   const [annotationPage, setAnnotationPage] = useState("1");
   const [annotationQuote, setAnnotationQuote] = useState("");
   const [annotationNote, setAnnotationNote] = useState("");
@@ -60,6 +67,7 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
   const [reviewNotes, setReviewNotes] = useState("");
   const [adminStats, setAdminStats] = useState<AdminStats | null>(null);
   const [failedJobs, setFailedJobs] = useState<AdminDocument[]>([]);
+  const [opsHealth, setOpsHealth] = useState<AdminOpsHealth | null>(null);
   const [aiStatus, setAiStatus] = useState<AiProviderStatus | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -80,13 +88,14 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
     const [profile, workspaceList] = await Promise.all([api.me(token), api.workspaces(token)]);
     const activeWorkspaceId = workspaceId ?? workspaceList[0]?.id ?? null;
     const filters = { workspaceId: activeWorkspaceId, status: statusFilter, documentType: typeFilter, riskSeverity: riskFilter, tag: tagFilter, favorite: favoriteOnly ? true : undefined, reviewStatus: reviewFilter, collectionId: collectionFilter };
-    const [docs, audits, invitationList, members, saved, collectionList] = await Promise.all([
+    const [docs, audits, invitationList, members, saved, collectionList, usage] = await Promise.all([
       api.documents(token, filters),
       activeWorkspaceId ? api.audit(token, activeWorkspaceId) : Promise.resolve([]),
       activeWorkspaceId ? api.invitations(token, activeWorkspaceId).catch(() => ({ invitations: [], pending_count: 0 })) : Promise.resolve({ invitations: [], pending_count: 0 }),
       activeWorkspaceId ? api.members(token, activeWorkspaceId).catch(() => []) : Promise.resolve([]),
       api.savedSearches(token, activeWorkspaceId).catch(() => []),
-      activeWorkspaceId ? api.collections(token, activeWorkspaceId).catch(() => []) : Promise.resolve([])
+      activeWorkspaceId ? api.collections(token, activeWorkspaceId).catch(() => []) : Promise.resolve([]),
+      activeWorkspaceId ? api.workspaceUsage(token, activeWorkspaceId).catch(() => null) : Promise.resolve(null)
     ]);
     setUser(profile);
     setProfileName((current) => current || profile.full_name);
@@ -98,6 +107,10 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
     setWorkspaceMembers(members);
     setSavedSearches(saved);
     setCollections(collectionList);
+    setWorkspaceUsage(usage);
+    setQuotaDocuments(usage?.document_quota ? String(usage.document_quota) : "");
+    setQuotaPages(usage?.page_quota ? String(usage.page_quota) : "");
+    setQuotaStorage(usage?.storage_quota_mb ? String(usage.storage_quota_mb) : "");
     api.notifications(token)
       .then((payload) => {
         setNotifications(payload.notifications);
@@ -111,10 +124,12 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
       .then(async (stats) => {
         setAdminStats(stats);
         setFailedJobs(await api.adminFailedDocuments(token));
+        setOpsHealth(await api.adminOpsHealth(token));
       })
       .catch(() => {
         setAdminStats(null);
         setFailedJobs([]);
+        setOpsHealth(null);
       });
     api.aiStatus(token)
       .then(setAiStatus)
@@ -169,6 +184,9 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
     api.annotations(token, selectedId)
       .then(setAnnotations)
       .catch(() => setAnnotations([]));
+    api.documentPermissions(token, selectedId)
+      .then(setDocumentPermissions)
+      .catch(() => setDocumentPermissions([]));
   }, [selectedId, token]);
 
   useEffect(() => {
@@ -394,6 +412,32 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
     }
   }
 
+  async function saveDocumentPermission() {
+    if (!selected || !permissionEmail.trim()) return;
+    try {
+      const permission = await api.upsertDocumentPermission(token, selected.id, permissionEmail.trim(), permissionRole);
+      setDocumentPermissions((items) => {
+        const rest = items.filter((item) => item.id !== permission.id && item.user_id !== permission.user_id);
+        return [...rest, permission].sort((left, right) => left.id - right.id);
+      });
+      setPermissionEmail("");
+      setMessage("Document permission saved.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save document permission");
+    }
+  }
+
+  async function deleteDocumentPermission(permission: DocumentPermission) {
+    if (!selected) return;
+    try {
+      await api.deleteDocumentPermission(token, selected.id, permission.id);
+      setDocumentPermissions((items) => items.filter((item) => item.id !== permission.id));
+      setMessage("Document permission removed.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not remove document permission");
+    }
+  }
+
   function goToPdfPage(page: number) {
     const maxPage = selected?.page_count ?? page;
     setPdfPage(Math.max(1, Math.min(maxPage || 1, page)));
@@ -497,6 +541,21 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
       await refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not rename workspace");
+    }
+  }
+
+  async function saveWorkspaceQuota() {
+    if (!workspaceId) return;
+    try {
+      const usage = await api.updateWorkspaceQuota(token, workspaceId, {
+        document_quota: quotaDocuments.trim() ? Number(quotaDocuments) : null,
+        page_quota: quotaPages.trim() ? Number(quotaPages) : null,
+        storage_quota_mb: quotaStorage.trim() ? Number(quotaStorage) : null
+      });
+      setWorkspaceUsage(usage);
+      setMessage("Workspace quotas updated.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update quotas");
     }
   }
 
@@ -695,6 +754,28 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
               </div>
             )}
           </div>
+          {workspaceUsage && (
+            <div className="stack">
+              <strong>Usage and quotas</strong>
+              <div className="metaGrid compact">
+                <div><span className="muted">Docs</span><strong>{workspaceUsage.document_count}{workspaceUsage.document_quota ? ` / ${workspaceUsage.document_quota}` : ""}</strong></div>
+                <div><span className="muted">Pages</span><strong>{workspaceUsage.page_count}{workspaceUsage.page_quota ? ` / ${workspaceUsage.page_quota}` : ""}</strong></div>
+                <div><span className="muted">Storage</span><strong>{workspaceUsage.storage_mb} MB{workspaceUsage.storage_quota_mb ? ` / ${workspaceUsage.storage_quota_mb}` : ""}</strong></div>
+              </div>
+              {canManageWorkspace && (
+                <div className="stack">
+                  <div className="row">
+                    <input value={quotaDocuments} onChange={(event) => setQuotaDocuments(event.target.value)} placeholder="Document quota" type="number" min={1} />
+                    <input value={quotaPages} onChange={(event) => setQuotaPages(event.target.value)} placeholder="Page quota" type="number" min={1} />
+                  </div>
+                  <div className="row">
+                    <input value={quotaStorage} onChange={(event) => setQuotaStorage(event.target.value)} placeholder="Storage MB quota" type="number" min={1} />
+                    <button onClick={saveWorkspaceQuota} title="Save workspace quotas"><RefreshCw size={16} /></button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {workspaceMembers.length > 0 && (
             <div className="stack">
               <strong>Members</strong>
@@ -863,6 +944,16 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
                 <div><span className="muted">Documents</span><strong>{adminStats.documents}</strong></div>
                 <div><span className="muted">Failed</span><strong>{adminStats.failed_documents}</strong></div>
               </div>
+              {opsHealth && (
+                <div className="opsCard">
+                  <div className="row">
+                    <strong>Ops health</strong>
+                    <span className={`status ${opsHealth.status === "ok" ? "ready" : "failed"}`}>{opsHealth.status}</span>
+                  </div>
+                  <span className="muted">Queued {opsHealth.uploaded_documents + opsHealth.processing_documents} | Metrics {Object.keys(opsHealth.metrics).length}</span>
+                  {opsHealth.recent_failures[0] && <span className="muted">Latest failure: {opsHealth.recent_failures[0].filename}</span>}
+                </div>
+              )}
               <div className="auditList">
                 {failedJobs.slice(0, 6).map((job) => (
                   <button className="auditItem secondary" key={job.id} onClick={() => setSelectedId(job.id)}>
@@ -959,6 +1050,30 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
                     </div>
                   ))}
                   {annotations.length === 0 && <span className="muted">No annotations yet.</span>}
+                </div>
+              </div>
+            )}
+            {selected && (
+              <div className="stack">
+                <h3>Document permissions</h3>
+                <div className="row">
+                  <input value={permissionEmail} onChange={(event) => setPermissionEmail(event.target.value)} placeholder="Workspace member email" />
+                  <select value={permissionRole} onChange={(event) => setPermissionRole(event.target.value as DocumentPermission["role"])}>
+                    <option value="viewer">Viewer</option>
+                    <option value="commenter">Commenter</option>
+                    <option value="editor">Editor</option>
+                  </select>
+                  <button onClick={saveDocumentPermission} disabled={!permissionEmail.trim()} title="Save document permission"><Plus size={16} /></button>
+                </div>
+                <div className="auditList">
+                  {documentPermissions.map((permission) => (
+                    <div className="auditItem" key={permission.id}>
+                      <strong>User {permission.user_id}</strong>
+                      <span className="muted">{permission.role}</span>
+                      <button className="danger" onClick={() => deleteDocumentPermission(permission)} title="Remove permission"><Trash2 size={14} /></button>
+                    </div>
+                  ))}
+                  {documentPermissions.length === 0 && <span className="muted">No document-specific permissions.</span>}
                 </div>
               </div>
             )}

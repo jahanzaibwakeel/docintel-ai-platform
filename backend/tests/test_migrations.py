@@ -27,6 +27,7 @@ class MigrationTests(unittest.TestCase):
         self.assertIn("saved_searches", tables)
         self.assertIn("document_collections", tables)
         self.assertIn("document_annotations", tables)
+        self.assertIn("document_permissions", tables)
         columns = {column["name"] for column in inspector.get_columns("documents")}
         self.assertIn("tags", columns)
         self.assertIn("favorite", columns)
@@ -34,6 +35,10 @@ class MigrationTests(unittest.TestCase):
         self.assertIn("review_status", columns)
         self.assertIn("review_notes", columns)
         self.assertIn("collection_id", columns)
+        workspace_columns = {column["name"] for column in inspector.get_columns("workspaces")}
+        self.assertIn("document_quota", workspace_columns)
+        self.assertIn("page_quota", workspace_columns)
+        self.assertIn("storage_quota_mb", workspace_columns)
         with engine.connect() as connection:
             installed = connection.execute(text("SELECT extname FROM pg_extension WHERE extname = 'vector'")).scalar()
         self.assertEqual(installed, "vector")

@@ -49,6 +49,7 @@ You can also run one-off Compose commands through:
 ```powershell
 .\scripts\compose.cmd config
 .\scripts\compose.cmd up --build
+.\scripts\prod-config.cmd
 ```
 
 If your PowerShell execution policy allows local scripts, the `.ps1` helpers are available too.
@@ -455,6 +456,17 @@ ALLOW_EXTERNAL_AI_WITH_PII=false
 - AI provider status is available at `GET /api/v1/ai/status` with provider, model, embedding model, timeout, context window, PII policy, and optional health check details.
 - Web dashboard surfaces AI runtime configuration so operators can confirm whether fallback, OpenAI, or Ollama is active.
 - The PDF review area adds page navigation, zoom controls, annotation page jumping, and quick annotation quote capture from selected text.
+
+### Phase 33: Permissions, Quotas, and Observability
+
+- Workspace quota fields track document count, processed page count, and stored PDF size limits.
+- Uploads enforce document and storage quotas, while background processing enforces page quotas after extraction.
+- Workspace usage is available through `GET /api/v1/workspaces/{workspace_id}/usage`; admins can update quotas through `PATCH /api/v1/workspaces/{workspace_id}/quota`.
+- Document-level permissions allow viewer, commenter, and editor grants through `/api/v1/documents/{document_id}/permissions`.
+- Admin ops health is available at `GET /api/v1/admin/ops/health` with queue counts, failed document counts, recent failures, and in-process metric snapshots.
+- Web dashboard includes quota controls, document permission management, and an operations health panel.
+- Mobile app shows active workspace usage and quota summaries.
+- `scripts/prod-config.cmd` validates the production Compose overlay using the repo-local Docker config to avoid Windows user-profile Docker config warnings.
 
 ## Notes
 

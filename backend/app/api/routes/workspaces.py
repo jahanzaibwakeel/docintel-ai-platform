@@ -24,6 +24,8 @@ from app.schemas.workspace import (
     CreateWorkspaceRequest,
     UpdateMemberRoleRequest,
     UpdateWorkspaceRequest,
+    UpdateWorkspaceQuotaRequest,
+    WorkspaceUsageResponse,
     WorkspaceInvitationResponse,
     WorkspaceInvitationListResponse,
     WorkspaceInviteResponse,
@@ -34,7 +36,7 @@ from app.schemas.document import AskResponse, WorkspaceAskRequest
 from app.services.audit import log_action
 from app.services.email import send_workspace_invitation_email, send_workspace_member_email
 from app.services.workspace_qa import answer_workspace_question
-from app.services.workspaces import get_user_workspaces, require_workspace_member
+from app.services.workspaces import get_user_workspaces, require_workspace_member, workspace_usage
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -100,6 +102,45 @@ def update_workspace(
     db.commit()
     db.refresh(workspace)
     return workspace
+
+
+@router.get("/{workspace_id}/usage", response_model=WorkspaceUsageResponse)
+def get_workspace_usage(
+    workspace_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    require_workspace_member(db, current_user, workspace_id)
+    return workspace_usage(db, workspace_id)
+
+
+@router.patch("/{workspace_id}/quota", response_model=WorkspaceUsageResponse)
+def update_workspace_quota(
+    workspace_id: int,
+    payload: UpdateWorkspaceQuotaRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    require_workspace_admin(db, current_user, workspace_id)
+    workspace = db.get(Workspace, workspace_id)
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    workspace.document_quota = payload.document_quota
+    workspace.page_quota = payload.page_quota
+    workspace.storage_quota_mb = payload.storage_quota_mb
+    log_action(
+        db,
+        action="workspace.quota_update",
+        actor_id=current_user.id,
+        workspace_id=workspace_id,
+        metadata={
+            "document_quota": workspace.document_quota,
+            "page_quota": workspace.page_quota,
+            "storage_quota_mb": workspace.storage_quota_mb,
+        },
+    )
+    db.commit()
+    return workspace_usage(db, workspace_id)
 
 
 @router.post("/{workspace_id}/leave", status_code=status.HTTP_204_NO_CONTENT)

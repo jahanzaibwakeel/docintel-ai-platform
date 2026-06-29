@@ -13,6 +13,9 @@ export type AuthTokens = {
 export type Workspace = {
   id: number;
   name: string;
+  document_quota: number | null;
+  page_quota: number | null;
+  storage_quota_mb: number | null;
   created_at: string;
 };
 
@@ -61,6 +64,20 @@ export type DocumentAnnotation = {
   color: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type WorkspaceUsage = {
+  workspace_id: number;
+  document_count: number;
+  page_count: number;
+  storage_bytes: number;
+  storage_mb: number;
+  document_quota: number | null;
+  page_quota: number | null;
+  storage_quota_mb: number | null;
+  document_quota_used_percent: number | null;
+  page_quota_used_percent: number | null;
+  storage_quota_used_percent: number | null;
 };
 
 export type DocumentDetail = DocumentItem & {

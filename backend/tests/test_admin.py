@@ -78,6 +78,13 @@ class AdminTests(unittest.TestCase):
         self.assertEqual(failed.json()[0]["filename"], "broken.pdf")
         self.assertEqual(failed.json()[0]["error_message"], "OCR timeout")
 
+        ops = self.client.get("/api/v1/admin/ops/health", headers=headers)
+        self.assertEqual(ops.status_code, 200, ops.text)
+        self.assertEqual(ops.json()["status"], "degraded")
+        self.assertEqual(ops.json()["failed_documents"], 1)
+        self.assertEqual(ops.json()["recent_failures"][0]["filename"], "broken.pdf")
+        self.assertIn("metrics", ops.json())
+
 
 if __name__ == "__main__":
     unittest.main()

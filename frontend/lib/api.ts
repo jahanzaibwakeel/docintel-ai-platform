@@ -1,4 +1,4 @@
-import type { AdminDocument, AdminStats, AiProviderStatus, AskResponse, AuditLog, AuthTokens, ChatMessage, Citation, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentReviewStatus, NotificationList, PasswordResetRequestResponse, SavedSearch, SearchResult, User, Workspace, WorkspaceInvitation, WorkspaceInvitationList, WorkspaceInviteResponse, WorkspaceMember } from "./types";
+import type { AdminDocument, AdminOpsHealth, AdminStats, AiProviderStatus, AskResponse, AuditLog, AuthTokens, ChatMessage, Citation, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentPermission, DocumentReviewStatus, NotificationList, PasswordResetRequestResponse, SavedSearch, SearchResult, User, Workspace, WorkspaceInvitation, WorkspaceInvitationList, WorkspaceInviteResponse, WorkspaceMember, WorkspaceUsage } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
@@ -85,6 +85,12 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ name })
     }),
+  workspaceUsage: (token: string, workspaceId: number) => request<WorkspaceUsage>(`/workspaces/${workspaceId}/usage`, token),
+  updateWorkspaceQuota: (token: string, workspaceId: number, payload: { document_quota?: number | null; page_quota?: number | null; storage_quota_mb?: number | null }) =>
+    request<WorkspaceUsage>(`/workspaces/${workspaceId}/quota`, token, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    }),
   leaveWorkspace: (token: string, workspaceId: number) =>
     request<void>(`/workspaces/${workspaceId}/leave`, token, { method: "POST" }),
   members: (token: string, workspaceId: number) => request<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`, token),
@@ -135,6 +141,7 @@ export const api = {
     request<void>(`/collections/${id}`, token, { method: "DELETE" }),
   audit: (token: string, workspaceId: number) => request<AuditLog[]>(`/workspaces/${workspaceId}/audit`, token),
   adminStats: (token: string) => request<AdminStats>("/admin/stats", token),
+  adminOpsHealth: (token: string) => request<AdminOpsHealth>("/admin/ops/health", token),
   adminFailedDocuments: (token: string) => request<AdminDocument[]>("/admin/documents?failed_only=true", token),
   aiStatus: (token: string, healthCheck = false) => request<AiProviderStatus>(`/ai/status${healthCheck ? "?health_check=true" : ""}`, token),
   notifications: (token: string) => request<NotificationList>("/notifications", token),
@@ -172,6 +179,14 @@ export const api = {
   clearMessages: (token: string, id: number) =>
     request<void>(`/documents/${id}/messages`, token, { method: "DELETE" }),
   annotations: (token: string, id: number) => request<DocumentAnnotation[]>(`/documents/${id}/annotations`, token),
+  documentPermissions: (token: string, id: number) => request<DocumentPermission[]>(`/documents/${id}/permissions`, token),
+  upsertDocumentPermission: (token: string, id: number, email: string, role: DocumentPermission["role"]) =>
+    request<DocumentPermission>(`/documents/${id}/permissions`, token, {
+      method: "POST",
+      body: JSON.stringify({ email, role })
+    }),
+  deleteDocumentPermission: (token: string, documentId: number, permissionId: number) =>
+    request<void>(`/documents/${documentId}/permissions/${permissionId}`, token, { method: "DELETE" }),
   createAnnotation: (token: string, id: number, pageNumber: number, note: string, quoteText?: string, color?: string) =>
     request<DocumentAnnotation>(`/documents/${id}/annotations`, token, {
       method: "POST",

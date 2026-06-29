@@ -1,4 +1,4 @@
-import type { AiProviderStatus, AskResponse, AuthTokens, ChatMessage, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentReviewStatus, NotificationList, SavedSearch, SearchResult, User, Workspace } from "./types";
+import type { AiProviderStatus, AskResponse, AuthTokens, ChatMessage, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentReviewStatus, NotificationList, SavedSearch, SearchResult, User, Workspace, WorkspaceUsage } from "./types";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
@@ -81,6 +81,7 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ name })
     }),
+  workspaceUsage: (token: string, workspaceId: number) => request<WorkspaceUsage>(`/workspaces/${workspaceId}/usage`, token),
   leaveWorkspace: (token: string, workspaceId: number) =>
     request<void>(`/workspaces/${workspaceId}/leave`, token, { method: "POST" }),
   members: (token: string, workspaceId: number) => request<unknown[]>(`/workspaces/${workspaceId}/members`, token),

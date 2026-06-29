@@ -30,6 +30,12 @@ class DocumentReviewStatus(StrEnum):
     needs_changes = "needs_changes"
 
 
+class DocumentAccessRole(StrEnum):
+    viewer = "viewer"
+    commenter = "commenter"
+    editor = "editor"
+
+
 class DocumentCollection(Base):
     __tablename__ = "document_collections"
 
@@ -85,6 +91,7 @@ class Document(Base):
     chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan")
     messages = relationship("DocumentMessage", back_populates="document", cascade="all, delete-orphan")
     annotations = relationship("DocumentAnnotation", back_populates="document", cascade="all, delete-orphan")
+    permissions = relationship("DocumentPermission", back_populates="document", cascade="all, delete-orphan")
 
 
 class DocumentChunk(Base):
@@ -128,3 +135,17 @@ class DocumentAnnotation(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     document = relationship("Document", back_populates="annotations")
+
+
+class DocumentPermission(Base):
+    __tablename__ = "document_permissions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    role: Mapped[DocumentAccessRole] = mapped_column(Enum(DocumentAccessRole), default=DocumentAccessRole.viewer, index=True)
+    granted_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    document = relationship("Document", back_populates="permissions")

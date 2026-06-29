@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.models.document import DocumentReviewStatus, DocumentStatus, MessageRole
+from app.models.document import DocumentAccessRole, DocumentReviewStatus, DocumentStatus, MessageRole
 
 
 class DocumentResponse(BaseModel):
@@ -85,6 +85,23 @@ class DocumentAnnotationResponse(BaseModel):
     quote_text: str | None
     note: str
     color: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DocumentPermissionRequest(BaseModel):
+    email: str
+    role: DocumentAccessRole
+
+
+class DocumentPermissionResponse(BaseModel):
+    id: int
+    document_id: int
+    user_id: int
+    role: DocumentAccessRole
+    granted_by_id: int | None
     created_at: datetime
     updated_at: datetime
 

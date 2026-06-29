@@ -41,3 +41,15 @@ class AdminDocumentResponse(BaseModel):
     created_at: datetime
     processing_started_at: datetime | None
     processing_completed_at: datetime | None
+
+
+class AdminOpsHealthResponse(BaseModel):
+    status: str
+    users: int
+    workspaces: int
+    documents: int
+    processing_documents: int
+    uploaded_documents: int
+    failed_documents: int
+    recent_failures: list[AdminDocumentResponse]
+    metrics: dict[str, float]

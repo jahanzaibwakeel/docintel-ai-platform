@@ -15,7 +15,7 @@ import {
 
 import { api } from "./src/api";
 import { tokenStorage } from "./src/storage";
-import type { AiProviderStatus, AskResponse, ChatMessage, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentReviewStatus, NotificationItem, SavedSearch, SearchResult, User, Workspace } from "./src/types";
+import type { AiProviderStatus, AskResponse, ChatMessage, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentReviewStatus, NotificationItem, SavedSearch, SearchResult, User, Workspace, WorkspaceUsage } from "./src/types";
 
 type Tab = "documents" | "search" | "detail" | "account";
 
@@ -25,6 +25,7 @@ export default function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [collections, setCollections] = useState<DocumentCollection[]>([]);
   const [workspaceId, setWorkspaceId] = useState<number | null>(null);
+  const [workspaceUsage, setWorkspaceUsage] = useState<WorkspaceUsage | null>(null);
   const [collectionFilter, setCollectionFilter] = useState<number | null>(null);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [selected, setSelected] = useState<DocumentDetail | null>(null);
@@ -101,12 +102,13 @@ export default function App() {
     try {
       const [profile, workspaceList] = await Promise.all([api.me(activeToken), api.workspaces(activeToken)]);
       const activeWorkspaceId = workspaceId ?? workspaceList[0]?.id ?? null;
-      const [docs, notificationList, saved, collectionList, providerStatus] = await Promise.all([
+      const [docs, notificationList, saved, collectionList, providerStatus, usage] = await Promise.all([
         api.documents(activeToken, { workspaceId: activeWorkspaceId, tag: tagFilter, favorite: favoriteOnly ? true : undefined, collectionId: collectionFilter }),
         api.notifications(activeToken),
         api.savedSearches(activeToken, activeWorkspaceId).catch(() => []),
         activeWorkspaceId ? api.collections(activeToken, activeWorkspaceId).catch(() => []) : Promise.resolve([]),
-        api.aiStatus(activeToken).catch(() => null)
+        api.aiStatus(activeToken).catch(() => null),
+        activeWorkspaceId ? api.workspaceUsage(activeToken, activeWorkspaceId).catch(() => null) : Promise.resolve(null)
       ]);
       setUser(profile);
       setProfileName((current) => current || profile.full_name);
@@ -118,6 +120,7 @@ export default function App() {
       setUnreadCount(notificationList.unread_count);
       setSavedSearches(saved);
       setAiStatus(providerStatus);
+      setWorkspaceUsage(usage);
     } finally {
       setLoading(false);
     }
@@ -776,6 +779,13 @@ export default function App() {
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>Workspace</Text>
               <Text style={styles.muted}>{currentWorkspace?.name ?? "No active workspace"}</Text>
+              {workspaceUsage ? (
+                <View style={styles.wrapRow}>
+                  <Text style={styles.muted}>Docs {workspaceUsage.document_count}{workspaceUsage.document_quota ? `/${workspaceUsage.document_quota}` : ""}</Text>
+                  <Text style={styles.muted}>Pages {workspaceUsage.page_count}{workspaceUsage.page_quota ? `/${workspaceUsage.page_quota}` : ""}</Text>
+                  <Text style={styles.muted}>Storage {workspaceUsage.storage_mb} MB{workspaceUsage.storage_quota_mb ? `/${workspaceUsage.storage_quota_mb}` : ""}</Text>
+                </View>
+              ) : null}
               <TextInput style={styles.input} value={workspaceName} onChangeText={setWorkspaceName} placeholder="Workspace name" />
               <Pressable style={styles.button} onPress={renameWorkspace} disabled={!workspaceId || workspaceName.trim() === currentWorkspace?.name}>
                 <Text style={styles.buttonText}>Rename workspace</Text>

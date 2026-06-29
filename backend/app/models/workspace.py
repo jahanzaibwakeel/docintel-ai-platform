@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,6 +20,9 @@ class Workspace(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(255))
+    document_quota: Mapped[int | None] = mapped_column(Integer)
+    page_quota: Mapped[int | None] = mapped_column(Integer)
+    storage_quota_mb: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     members = relationship("WorkspaceMember", back_populates="workspace", cascade="all, delete-orphan")

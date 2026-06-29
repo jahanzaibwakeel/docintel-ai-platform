@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.deps import get_current_user
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.models.document import Document, DocumentAnnotation, DocumentCollection, DocumentMessage, DocumentReviewStatus, DocumentStatus, MessageRole
+from app.models.document import Document, DocumentAccessRole, DocumentAnnotation, DocumentCollection, DocumentMessage, DocumentPermission, DocumentReviewStatus, DocumentStatus, MessageRole
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
 from app.schemas.document import (
@@ -22,6 +22,8 @@ from app.schemas.document import (
     DocumentAnnotationRequest,
     DocumentAnnotationResponse,
     DocumentDetailResponse,
+    DocumentPermissionRequest,
+    DocumentPermissionResponse,
     DocumentResponse,
     UpdateDocumentOrganizationRequest,
     UpdateDocumentReviewRequest,
@@ -32,7 +34,7 @@ from app.services.export import document_export_markdown, document_export_payloa
 from app.services.lifecycle import apply_default_retention, delete_document
 from app.services.qa import answer_question
 from app.services.storage import get_storage
-from app.services.workspaces import get_default_workspace, require_workspace_member, require_workspace_writer
+from app.services.workspaces import assert_workspace_upload_quota, get_default_workspace, require_workspace_member, require_workspace_writer
 from app.worker.tasks import process_document
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -74,6 +76,30 @@ def validate_collection(db: Session, user: User, collection_id: int | None, work
     if workspace_id is not None and collection.workspace_id != workspace_id:
         raise HTTPException(status_code=400, detail="Collection belongs to a different workspace")
     return collection
+
+
+def document_permission_role(db: Session, document: Document, user: User) -> DocumentAccessRole | None:
+    permission = db.scalar(
+        select(DocumentPermission).where(DocumentPermission.document_id == document.id, DocumentPermission.user_id == user.id)
+    )
+    return permission.role if permission else None
+
+
+def require_document_commenter(db: Session, document: Document, user: User) -> None:
+    membership = require_workspace_member(db, user, document.workspace_id)
+    if membership.role != "viewer":
+        return
+    role = document_permission_role(db, document, user)
+    if role not in {DocumentAccessRole.commenter, DocumentAccessRole.editor}:
+        raise HTTPException(status_code=403, detail="Comment access is required for this document")
+
+
+def require_document_editor(db: Session, document: Document, user: User) -> None:
+    membership = require_workspace_member(db, user, document.workspace_id)
+    if membership.role != "viewer":
+        return
+    if document_permission_role(db, document, user) != DocumentAccessRole.editor:
+        raise HTTPException(status_code=403, detail="Editor access is required for this document")
 
 
 @router.get("", response_model=list[DocumentResponse])
@@ -144,6 +170,7 @@ def upload_document(
         workspace = db.get(Workspace, workspace_id)
     if workspace is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
+    assert_workspace_upload_quota(db, workspace, len(contents))
 
     storage_path = get_storage().save_pdf(workspace.id, contents)
 
@@ -171,6 +198,69 @@ def upload_document(
     return document
 
 
+@router.get("/{document_id}/permissions", response_model=list[DocumentPermissionResponse])
+def list_document_permissions(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[DocumentPermission]:
+    document = get_owned_document(document_id, current_user, db)
+    require_workspace_writer(db, current_user, document.workspace_id)
+    return list(db.scalars(select(DocumentPermission).where(DocumentPermission.document_id == document.id).order_by(DocumentPermission.id.asc())))
+
+
+@router.post("/{document_id}/permissions", response_model=DocumentPermissionResponse, status_code=status.HTTP_201_CREATED)
+def upsert_document_permission(
+    document_id: int,
+    payload: DocumentPermissionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DocumentPermission:
+    document = get_owned_document(document_id, current_user, db)
+    require_workspace_writer(db, current_user, document.workspace_id)
+    target_user = db.scalar(select(User).where(User.email == payload.email.lower().strip()))
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    require_workspace_member(db, target_user, document.workspace_id)
+    if target_user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="You already have access to this document")
+    permission = db.scalar(select(DocumentPermission).where(DocumentPermission.document_id == document.id, DocumentPermission.user_id == target_user.id))
+    if permission:
+        permission.role = payload.role
+        permission.granted_by_id = current_user.id
+    else:
+        permission = DocumentPermission(document_id=document.id, user_id=target_user.id, role=payload.role, granted_by_id=current_user.id)
+        db.add(permission)
+    log_action(
+        db,
+        action="document.permission_upsert",
+        actor_id=current_user.id,
+        workspace_id=document.workspace_id,
+        document_id=document.id,
+        metadata={"target_user_id": target_user.id, "role": payload.role},
+    )
+    db.commit()
+    db.refresh(permission)
+    return permission
+
+
+@router.delete("/{document_id}/permissions/{permission_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document_permission(
+    document_id: int,
+    permission_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    document = get_owned_document(document_id, current_user, db)
+    require_workspace_writer(db, current_user, document.workspace_id)
+    permission = db.get(DocumentPermission, permission_id)
+    if not permission or permission.document_id != document.id:
+        raise HTTPException(status_code=404, detail="Document permission not found")
+    db.delete(permission)
+    log_action(db, action="document.permission_delete", actor_id=current_user.id, workspace_id=document.workspace_id, document_id=document.id, metadata={"permission_id": permission_id})
+    db.commit()
+
+
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document_route(
     document_id: int,
@@ -178,7 +268,7 @@ def delete_document_route(
     db: Session = Depends(get_db),
 ) -> None:
     document = get_owned_document(document_id, current_user, db)
-    require_workspace_writer(db, current_user, document.workspace_id)
+    require_document_editor(db, document, current_user)
     delete_document(db, document, actor_id=current_user.id, reason="user_requested")
     db.commit()
 
@@ -235,7 +325,7 @@ def update_document_organization(
     db: Session = Depends(get_db),
 ) -> Document:
     document = get_owned_document(document_id, current_user, db)
-    require_workspace_writer(db, current_user, document.workspace_id)
+    require_document_editor(db, document, current_user)
     if payload.tags is not None:
         document.tags = normalize_tags(payload.tags)
     if payload.favorite is not None:
@@ -280,7 +370,7 @@ def create_document_annotation(
     db: Session = Depends(get_db),
 ) -> DocumentAnnotation:
     document = get_owned_document(document_id, current_user, db)
-    require_workspace_writer(db, current_user, document.workspace_id)
+    require_document_commenter(db, document, current_user)
     annotation = DocumentAnnotation(
         document_id=document.id,
         user_id=current_user.id,
@@ -304,7 +394,7 @@ def delete_document_annotation(
     db: Session = Depends(get_db),
 ) -> None:
     document = get_owned_document(document_id, current_user, db)
-    require_workspace_writer(db, current_user, document.workspace_id)
+    require_document_commenter(db, document, current_user)
     annotation = db.get(DocumentAnnotation, annotation_id)
     if not annotation or annotation.document_id != document.id:
         raise HTTPException(status_code=404, detail="Annotation not found")
@@ -321,7 +411,7 @@ def update_document_review(
     db: Session = Depends(get_db),
 ) -> Document:
     document = get_owned_document(document_id, current_user, db)
-    require_workspace_writer(db, current_user, document.workspace_id)
+    require_document_editor(db, document, current_user)
     if payload.title is not None:
         document.title = payload.title.strip() or None
     if payload.review_status is not None:
@@ -422,7 +512,7 @@ def reprocess_document(
     db: Session = Depends(get_db),
 ) -> Document:
     document = get_owned_document(document_id, current_user, db)
-    require_workspace_writer(db, current_user, document.workspace_id)
+    require_document_editor(db, document, current_user)
     document.status = DocumentStatus.uploaded
     document.error_message = None
     document.extraction_diagnostics = None

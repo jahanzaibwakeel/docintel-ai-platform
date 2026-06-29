@@ -8,6 +8,9 @@ from app.models.workspace import WorkspaceRole
 class WorkspaceResponse(BaseModel):
     id: int
     name: str
+    document_quota: int | None
+    page_quota: int | None
+    storage_quota_mb: int | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -19,6 +22,26 @@ class CreateWorkspaceRequest(BaseModel):
 
 class UpdateWorkspaceRequest(BaseModel):
     name: str = Field(min_length=2, max_length=255)
+
+
+class UpdateWorkspaceQuotaRequest(BaseModel):
+    document_quota: int | None = Field(default=None, ge=1)
+    page_quota: int | None = Field(default=None, ge=1)
+    storage_quota_mb: int | None = Field(default=None, ge=1)
+
+
+class WorkspaceUsageResponse(BaseModel):
+    workspace_id: int
+    document_count: int
+    page_count: int
+    storage_bytes: int
+    storage_mb: float
+    document_quota: int | None
+    page_quota: int | None
+    storage_quota_mb: int | None
+    document_quota_used_percent: float | None
+    page_quota_used_percent: float | None
+    storage_quota_used_percent: float | None
 
 
 class AddMemberRequest(BaseModel):
