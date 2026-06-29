@@ -60,6 +60,66 @@ def _fallback_fields(text: str) -> dict:
     }
 
 
+def provider_status(health_check: bool = False) -> dict:
+    settings = get_settings()
+    provider = settings.ai_provider
+    if provider == "openai":
+        configured = bool(settings.openai_api_key)
+        model = settings.openai_model
+        embedding_model = settings.openai_embedding_model
+    elif provider == "ollama":
+        configured = bool(settings.ollama_base_url and settings.ollama_model)
+        model = settings.ollama_model
+        embedding_model = settings.ollama_embedding_model
+    else:
+        configured = True
+        model = "fallback-extractive"
+        embedding_model = "fallback-hashing"
+
+    healthy: bool | None = None
+    detail = "Fallback provider is ready."
+    if provider == "openai":
+        detail = "OpenAI provider is configured." if configured else "Set OPENAI_API_KEY to enable OpenAI."
+        if health_check and configured:
+            try:
+                response = httpx.get(
+                    "https://api.openai.com/v1/models",
+                    headers={"Authorization": f"Bearer {settings.openai_api_key}"},
+                    timeout=min(settings.ai_request_timeout_seconds, 20),
+                )
+                healthy = response.status_code < 500
+                detail = "OpenAI health check completed." if healthy else f"OpenAI health check returned HTTP {response.status_code}."
+            except httpx.HTTPError as error:
+                healthy = False
+                detail = f"OpenAI health check failed: {error.__class__.__name__}."
+    elif provider == "ollama":
+        detail = "Ollama provider is configured." if configured else "Set OLLAMA_BASE_URL and OLLAMA_MODEL to enable Ollama."
+        if health_check and configured:
+            try:
+                response = httpx.get(f"{settings.ollama_base_url}/api/tags", timeout=min(settings.ai_request_timeout_seconds, 20))
+                healthy = response.status_code == 200
+                detail = "Ollama health check completed." if healthy else f"Ollama health check returned HTTP {response.status_code}."
+            except httpx.HTTPError as error:
+                healthy = False
+                detail = f"Ollama health check failed: {error.__class__.__name__}."
+    elif health_check:
+        healthy = True
+
+    return {
+        "provider": provider,
+        "configured": configured,
+        "healthy": healthy,
+        "model": model,
+        "embedding_model": embedding_model,
+        "embedding_dimensions": settings.embedding_dimensions,
+        "max_context_chars": settings.ai_max_context_chars,
+        "request_timeout_seconds": settings.ai_request_timeout_seconds,
+        "pii_redaction_enabled": settings.redact_pii_for_external_ai,
+        "external_ai_with_pii_allowed": settings.allow_external_ai_with_pii,
+        "detail": detail,
+    }
+
+
 def _classification_scores(text: str) -> dict[str, int]:
     lowered = text.lower()
     signals = {
@@ -121,7 +181,7 @@ def embed_text(text: str) -> list[float]:
             "https://api.openai.com/v1/embeddings",
             headers={"Authorization": f"Bearer {settings.openai_api_key}"},
             json={"model": settings.openai_embedding_model, "input": text, "dimensions": settings.embedding_dimensions},
-            timeout=60,
+            timeout=settings.ai_request_timeout_seconds,
         )
         response.raise_for_status()
         return response.json()["data"][0]["embedding"]
@@ -130,7 +190,7 @@ def embed_text(text: str) -> list[float]:
         response = httpx.post(
             f"{settings.ollama_base_url}/api/embeddings",
             json={"model": settings.ollama_embedding_model, "prompt": text},
-            timeout=60,
+            timeout=settings.ai_request_timeout_seconds,
         )
         response.raise_for_status()
         embedding = response.json()["embedding"]
@@ -142,6 +202,7 @@ def embed_text(text: str) -> list[float]:
 
 def chat(prompt: str, context: str) -> str:
     settings = get_settings()
+    context = context[: settings.ai_max_context_chars]
     if settings.ai_provider == "openai" and settings.openai_api_key:
         context = _external_ai_text(context)
         response = httpx.post(
@@ -155,7 +216,7 @@ def chat(prompt: str, context: str) -> str:
                 ],
                 "temperature": 0.2,
             },
-            timeout=90,
+            timeout=settings.ai_request_timeout_seconds,
         )
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"].strip()
@@ -164,7 +225,7 @@ def chat(prompt: str, context: str) -> str:
         response = httpx.post(
             f"{settings.ollama_base_url}/api/generate",
             json={"model": settings.ollama_model, "prompt": f"Context:\n{context}\n\nTask:\n{prompt}", "stream": False},
-            timeout=120,
+            timeout=max(settings.ai_request_timeout_seconds, 120),
         )
         response.raise_for_status()
         return response.json()["response"].strip()
@@ -176,7 +237,7 @@ def chat(prompt: str, context: str) -> str:
 
 
 def summarize(text: str) -> str:
-    return chat("Create a concise executive summary with key risks, obligations, dates, and decisions.", text[:14000])
+    return chat("Create a concise executive summary with key risks, obligations, dates, and decisions.", text)
 
 
 def extract_fields(text: str) -> dict:
@@ -184,7 +245,7 @@ def extract_fields(text: str) -> dict:
         "Extract key fields as strict JSON with keys: names, dates, organizations, amounts, emails, "
         "phone_numbers, important_clauses. Use arrays of strings. Return JSON only."
     )
-    raw = chat(prompt, text[:16000])
+    raw = chat(prompt, text)
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
@@ -198,7 +259,7 @@ def analyze_document_intelligence(text: str) -> dict:
         "to an array of {value, confidence, source}, and risk_flags as an array of "
         "{label, severity, confidence, evidence}. Use severity low, medium, or high. Return JSON only."
     )
-    raw = chat(prompt, text[:18000])
+    raw = chat(prompt, text)
     try:
         parsed = json.loads(raw)
         fallback = _fallback_structured_intelligence(text)

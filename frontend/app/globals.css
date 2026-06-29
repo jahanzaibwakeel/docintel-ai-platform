@@ -341,6 +341,47 @@ textarea {
   background: #fbfcfd;
 }
 
+.opsCard {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfcfd;
+}
+
+.viewerShell {
+  display: grid;
+  gap: 10px;
+}
+
+.viewerToolbar,
+.annotationStrip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.viewerToolbar input {
+  width: 88px;
+}
+
+.annotationStrip {
+  justify-content: flex-start;
+}
+
+.annotationStrip button {
+  min-height: 32px;
+  padding: 0 10px;
+}
+
+.activeAnnotation {
+  background: var(--accent);
+  color: white;
+}
+
 @media (max-width: 920px) {
   .grid {
     grid-template-columns: 1fr;

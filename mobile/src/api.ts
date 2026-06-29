@@ -1,4 +1,4 @@
-import type { AskResponse, AuthTokens, ChatMessage, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentReviewStatus, NotificationList, SavedSearch, SearchResult, User, Workspace } from "./types";
+import type { AiProviderStatus, AskResponse, AuthTokens, ChatMessage, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentReviewStatus, NotificationList, SavedSearch, SearchResult, User, Workspace } from "./types";
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
@@ -153,6 +153,7 @@ export const api = {
       body: JSON.stringify({ title, review_status: reviewStatus, review_notes: reviewNotes })
     }),
   notifications: (token: string) => request<NotificationList>("/notifications", token),
+  aiStatus: (token: string, healthCheck = false) => request<AiProviderStatus>(`/ai/status${healthCheck ? "?health_check=true" : ""}`, token),
   markNotificationRead: (token: string, id: number) => request<void>(`/notifications/${id}/read`, token, { method: "POST" }),
   documentExportJson: (token: string, id: number) => request<Record<string, unknown>>(`/documents/${id}/export?format=json`, token),
   documentExportMarkdown: async (token: string, id: number) => {

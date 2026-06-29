@@ -142,3 +142,17 @@ export type NotificationList = {
   unread_count: number;
   notifications: NotificationItem[];
 };
+
+export type AiProviderStatus = {
+  provider: string;
+  configured: boolean;
+  healthy: boolean | null;
+  model: string;
+  embedding_model: string;
+  embedding_dimensions: number;
+  max_context_chars: number;
+  request_timeout_seconds: number;
+  pii_redaction_enabled: boolean;
+  external_ai_with_pii_allowed: boolean;
+  detail: string;
+};

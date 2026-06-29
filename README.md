@@ -447,6 +447,15 @@ ALLOW_EXTERNAL_AI_WITH_PII=false
 - Mobile app includes collection filters, collection assignment, and simple document annotation notes.
 - Backend tests cover collection CRUD, bulk updates, collection-filtered list/search, annotation create/list/delete, and migration coverage.
 
+### Phase 32: Deployment Hardening, AI Ops, and PDF Review
+
+- Production deployment files are included in `.env.production.example`, `docker-compose.prod.yml`, and `deploy/nginx.conf`.
+- The production override hides direct backend, frontend, PostgreSQL, and Redis host ports behind an HTTPS Nginx proxy.
+- Copy `.env.production.example` to `.env.production`, set real secrets/domains/TLS certificate paths, then run `scripts/prod-up.cmd`.
+- AI provider status is available at `GET /api/v1/ai/status` with provider, model, embedding model, timeout, context window, PII policy, and optional health check details.
+- Web dashboard surfaces AI runtime configuration so operators can confirm whether fallback, OpenAI, or Ollama is active.
+- The PDF review area adds page navigation, zoom controls, annotation page jumping, and quick annotation quote capture from selected text.
+
 ## Notes
 
 - `fallback` AI mode uses deterministic embeddings and extractive summaries, useful for local demos and tests without an LLM.

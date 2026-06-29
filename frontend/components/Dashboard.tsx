@@ -1,9 +1,9 @@
 "use client";
 
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import { Clock, Download, FileSearch, LogOut, Plus, RefreshCw, Search, Star, Tags, Trash2, Upload, UserPlus } from "lucide-react";
+import { Bot, Clock, Download, FileSearch, LogOut, Plus, RefreshCw, Search, Star, Tags, Trash2, Upload, UserPlus, ZoomIn, ZoomOut } from "lucide-react";
 import { api } from "@/lib/api";
-import type { AdminDocument, AdminStats, AskResponse, AuditLog, ChatMessage, Citation, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentReviewStatus, NotificationItem, SavedSearch, SearchResult, User, Workspace, WorkspaceInvitation, WorkspaceMember } from "@/lib/types";
+import type { AdminDocument, AdminStats, AiProviderStatus, AskResponse, AuditLog, ChatMessage, Citation, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentReviewStatus, NotificationItem, SavedSearch, SearchResult, User, Workspace, WorkspaceInvitation, WorkspaceMember } from "@/lib/types";
 
 export function Dashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
   const [user, setUser] = useState<User | null>(null);
@@ -36,6 +36,8 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
   const [bulkCollectionId, setBulkCollectionId] = useState<number | null>(null);
   const [workspaceAnswer, setWorkspaceAnswer] = useState<AskResponse | null>(null);
   const [pdfUrl, setPdfUrl] = useState("");
+  const [pdfPage, setPdfPage] = useState(1);
+  const [pdfZoom, setPdfZoom] = useState(100);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [profileName, setProfileName] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -58,6 +60,7 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
   const [reviewNotes, setReviewNotes] = useState("");
   const [adminStats, setAdminStats] = useState<AdminStats | null>(null);
   const [failedJobs, setFailedJobs] = useState<AdminDocument[]>([]);
+  const [aiStatus, setAiStatus] = useState<AiProviderStatus | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [acceptedInviteToken, setAcceptedInviteToken] = useState("");
@@ -71,6 +74,7 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
     [workspaceMembers, user]
   );
   const canManageWorkspace = currentMember?.role === "owner" || currentMember?.role === "admin";
+  const currentPdfUrl = useMemo(() => (pdfUrl ? `${pdfUrl}#page=${pdfPage}&zoom=${pdfZoom}` : ""), [pdfUrl, pdfPage, pdfZoom]);
 
   async function refresh() {
     const [profile, workspaceList] = await Promise.all([api.me(token), api.workspaces(token)]);
@@ -112,6 +116,9 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
         setAdminStats(null);
         setFailedJobs([]);
       });
+    api.aiStatus(token)
+      .then(setAiStatus)
+      .catch(() => setAiStatus(null));
     if (!selectedId && docs.length > 0) setSelectedId(docs[0].id);
   }
 
@@ -149,6 +156,8 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
         setTagInput((document.tags ?? []).join(", "));
         setDocumentFavorite(document.favorite);
         setSelectedCollectionId(document.collection_id);
+        setPdfPage(1);
+        setPdfZoom(100);
         setReviewTitle(document.title ?? "");
         setReviewStatus(document.review_status);
         setReviewNotes(document.review_notes ?? "");
@@ -383,6 +392,20 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not delete annotation");
     }
+  }
+
+  function goToPdfPage(page: number) {
+    const maxPage = selected?.page_count ?? page;
+    setPdfPage(Math.max(1, Math.min(maxPage || 1, page)));
+  }
+
+  function useSelectedTextForAnnotation() {
+    const text = window.getSelection()?.toString().trim();
+    if (!text) {
+      setMessage("Select text in the browser, then capture it as the annotation quote.");
+      return;
+    }
+    setAnnotationQuote(text.slice(0, 500));
   }
 
   async function applyBulkAction() {
@@ -691,6 +714,28 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
               ))}
             </div>
           )}
+          <div className="stack">
+            <div className="row">
+              <strong>AI operations</strong>
+              <button className="secondary" onClick={() => api.aiStatus(token, true).then(setAiStatus).catch((error) => setMessage(error instanceof Error ? error.message : "AI health check failed"))} title="Check AI provider">
+                <Bot size={16} />
+              </button>
+            </div>
+            {aiStatus ? (
+              <div className="opsCard">
+                <div className="row">
+                  <strong>{aiStatus.provider}</strong>
+                  <span className={`status ${aiStatus.configured ? "ready" : "failed"}`}>{aiStatus.configured ? "configured" : "setup"}</span>
+                </div>
+                <span className="muted">{aiStatus.model} | {aiStatus.embedding_model}</span>
+                <span className="muted">{aiStatus.embedding_dimensions} dims | {aiStatus.max_context_chars.toLocaleString()} chars | {aiStatus.request_timeout_seconds}s</span>
+                <span className="muted">PII {aiStatus.pii_redaction_enabled ? "redacted" : "not redacted"} | external PII {aiStatus.external_ai_with_pii_allowed ? "allowed" : "blocked"}</span>
+                <span className="muted">{aiStatus.healthy === null ? aiStatus.detail : `${aiStatus.healthy ? "Healthy" : "Unhealthy"} - ${aiStatus.detail}`}</span>
+              </div>
+            ) : (
+              <span className="muted">AI status unavailable.</span>
+            )}
+          </div>
           <div className="row">
             <strong>Documents</strong>
             <label>
@@ -899,12 +944,16 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
                 </div>
                 <div className="row">
                   <input value={annotationNote} onChange={(event) => setAnnotationNote(event.target.value)} placeholder="Annotation note" />
+                  <button className="secondary" onClick={useSelectedTextForAnnotation} title="Capture selected text">Quote</button>
                   <button onClick={createAnnotation} disabled={!annotationNote.trim()} title="Add annotation"><Plus size={16} /></button>
                 </div>
                 <div className="auditList">
                   {annotations.map((annotation) => (
                     <div className="auditItem" key={annotation.id}>
-                      <strong>Page {annotation.page_number}</strong>
+                      <button className="secondary" onClick={() => {
+                        goToPdfPage(annotation.page_number);
+                        setAnnotationPage(String(annotation.page_number));
+                      }}>Page {annotation.page_number}</button>
                       <span className="muted">{annotation.quote_text ? `${annotation.quote_text} - ` : ""}{annotation.note}</span>
                       <button className="danger" onClick={() => deleteAnnotation(annotation)} title="Delete annotation"><Trash2 size={14} /></button>
                     </div>
@@ -914,8 +963,41 @@ export function Dashboard({ token, onLogout }: { token: string; onLogout: () => 
               </div>
             )}
             {pdfUrl && (
-              <div className="pdfFrame">
-                <iframe src={pdfUrl} title={selected?.filename ?? "PDF preview"} />
+              <div className="viewerShell">
+                <div className="viewerToolbar">
+                  <div className="row">
+                    <button className="secondary" disabled={pdfPage <= 1} onClick={() => goToPdfPage(pdfPage - 1)} title="Previous page">Prev</button>
+                    <input
+                      aria-label="PDF page"
+                      min={1}
+                      max={selected?.page_count ?? undefined}
+                      type="number"
+                      value={pdfPage}
+                      onChange={(event) => goToPdfPage(Number(event.target.value) || 1)}
+                    />
+                    <span className="muted">of {selected?.page_count ?? "-"}</span>
+                    <button className="secondary" disabled={selected?.page_count ? pdfPage >= selected.page_count : false} onClick={() => goToPdfPage(pdfPage + 1)} title="Next page">Next</button>
+                  </div>
+                  <div className="row">
+                    <button className="secondary" onClick={() => setPdfZoom((value) => Math.max(50, value - 25))} title="Zoom out"><ZoomOut size={16} /></button>
+                    <span className="muted">{pdfZoom}%</span>
+                    <button className="secondary" onClick={() => setPdfZoom((value) => Math.min(200, value + 25))} title="Zoom in"><ZoomIn size={16} /></button>
+                  </div>
+                </div>
+                <div className="annotationStrip">
+                  {annotations.map((annotation) => (
+                    <button
+                      className={annotation.page_number === pdfPage ? "activeAnnotation" : "secondary"}
+                      key={`viewer-${annotation.id}`}
+                      onClick={() => goToPdfPage(annotation.page_number)}
+                    >
+                      Page {annotation.page_number}
+                    </button>
+                  ))}
+                </div>
+                <div className="pdfFrame">
+                  <iframe src={currentPdfUrl} title={selected?.filename ?? "PDF preview"} />
+                </div>
               </div>
             )}
             {diagnostics && (

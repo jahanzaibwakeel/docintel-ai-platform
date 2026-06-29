@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from redis import Redis
 from sqlalchemy import text
 
-from app.api.routes import admin, auth, collections, documents, notifications, saved_searches, search, workspaces
+from app.api.routes import admin, ai, auth, collections, documents, notifications, saved_searches, search, workspaces
 from app.core.config import get_settings
 from app.core.database import SessionLocal, init_db
 from app.core.logging import configure_logging, request_logging_middleware
@@ -63,6 +63,7 @@ def prometheus_metrics() -> Response:
 
 
 app.include_router(auth.router, prefix=settings.api_prefix)
+app.include_router(ai.router, prefix=settings.api_prefix)
 app.include_router(documents.router, prefix=settings.api_prefix)
 app.include_router(search.router, prefix=settings.api_prefix)
 app.include_router(saved_searches.router, prefix=settings.api_prefix)

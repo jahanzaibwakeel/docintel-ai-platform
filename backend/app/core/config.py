@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     chunk_size: int = 1200
     chunk_overlap: int = 160
     embedding_dimensions: int = 1536
+    ai_request_timeout_seconds: int = 90
+    ai_max_context_chars: int = 18000
 
     ai_provider: str = "fallback"
     openai_api_key: str | None = None

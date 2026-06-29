@@ -1,4 +1,4 @@
-import type { AdminDocument, AdminStats, AskResponse, AuditLog, AuthTokens, ChatMessage, Citation, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentReviewStatus, NotificationList, PasswordResetRequestResponse, SavedSearch, SearchResult, User, Workspace, WorkspaceInvitation, WorkspaceInvitationList, WorkspaceInviteResponse, WorkspaceMember } from "./types";
+import type { AdminDocument, AdminStats, AiProviderStatus, AskResponse, AuditLog, AuthTokens, ChatMessage, Citation, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentReviewStatus, NotificationList, PasswordResetRequestResponse, SavedSearch, SearchResult, User, Workspace, WorkspaceInvitation, WorkspaceInvitationList, WorkspaceInviteResponse, WorkspaceMember } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
@@ -136,6 +136,7 @@ export const api = {
   audit: (token: string, workspaceId: number) => request<AuditLog[]>(`/workspaces/${workspaceId}/audit`, token),
   adminStats: (token: string) => request<AdminStats>("/admin/stats", token),
   adminFailedDocuments: (token: string) => request<AdminDocument[]>("/admin/documents?failed_only=true", token),
+  aiStatus: (token: string, healthCheck = false) => request<AiProviderStatus>(`/ai/status${healthCheck ? "?health_check=true" : ""}`, token),
   notifications: (token: string) => request<NotificationList>("/notifications", token),
   markNotificationRead: (token: string, id: number) => request<void>(`/notifications/${id}/read`, token, { method: "POST" }),
   askWorkspace: (token: string, workspaceId: number, question: string) =>

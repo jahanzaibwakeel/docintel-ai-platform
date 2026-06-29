@@ -60,6 +60,23 @@ class ApiWorkflowTests(unittest.TestCase):
         self.assertEqual(len(workspaces.json()), 1)
         self.assertEqual(workspaces.json()[0]["name"], "Ada Lovelace's Workspace")
 
+    def test_ai_status_reports_provider_configuration(self) -> None:
+        headers = self.register(email="ai-status@example.com")
+
+        status_response = self.client.get("/api/v1/ai/status", headers=headers)
+        self.assertEqual(status_response.status_code, 200, status_response.text)
+        payload = status_response.json()
+        self.assertEqual(payload["provider"], self.settings.ai_provider)
+        self.assertIn("model", payload)
+        self.assertIn("embedding_model", payload)
+        self.assertEqual(payload["embedding_dimensions"], self.settings.embedding_dimensions)
+        self.assertEqual(payload["max_context_chars"], self.settings.ai_max_context_chars)
+        self.assertTrue(payload["configured"])
+
+        health_response = self.client.get("/api/v1/ai/status?health_check=true", headers=headers)
+        self.assertEqual(health_response.status_code, 200, health_response.text)
+        self.assertTrue(health_response.json()["healthy"])
+
     def test_workspace_member_invite_sends_email(self) -> None:
         with TemporaryDirectory() as outbox_dir:
             self.settings.email_provider = "outbox"

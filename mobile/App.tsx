@@ -15,7 +15,7 @@ import {
 
 import { api } from "./src/api";
 import { tokenStorage } from "./src/storage";
-import type { AskResponse, ChatMessage, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentReviewStatus, NotificationItem, SavedSearch, SearchResult, User, Workspace } from "./src/types";
+import type { AiProviderStatus, AskResponse, ChatMessage, DocumentAnnotation, DocumentCollection, DocumentComparison, DocumentDetail, DocumentItem, DocumentReviewStatus, NotificationItem, SavedSearch, SearchResult, User, Workspace } from "./src/types";
 
 type Tab = "documents" | "search" | "detail" | "account";
 
@@ -39,6 +39,7 @@ export default function App() {
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
   const [workspaceAnswer, setWorkspaceAnswer] = useState<AskResponse | null>(null);
   const [comparison, setComparison] = useState<DocumentComparison | null>(null);
+  const [aiStatus, setAiStatus] = useState<AiProviderStatus | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [question, setQuestion] = useState("");
@@ -100,11 +101,12 @@ export default function App() {
     try {
       const [profile, workspaceList] = await Promise.all([api.me(activeToken), api.workspaces(activeToken)]);
       const activeWorkspaceId = workspaceId ?? workspaceList[0]?.id ?? null;
-      const [docs, notificationList, saved, collectionList] = await Promise.all([
+      const [docs, notificationList, saved, collectionList, providerStatus] = await Promise.all([
         api.documents(activeToken, { workspaceId: activeWorkspaceId, tag: tagFilter, favorite: favoriteOnly ? true : undefined, collectionId: collectionFilter }),
         api.notifications(activeToken),
         api.savedSearches(activeToken, activeWorkspaceId).catch(() => []),
-        activeWorkspaceId ? api.collections(activeToken, activeWorkspaceId).catch(() => []) : Promise.resolve([])
+        activeWorkspaceId ? api.collections(activeToken, activeWorkspaceId).catch(() => []) : Promise.resolve([]),
+        api.aiStatus(activeToken).catch(() => null)
       ]);
       setUser(profile);
       setProfileName((current) => current || profile.full_name);
@@ -115,6 +117,7 @@ export default function App() {
       setNotifications(notificationList.notifications);
       setUnreadCount(notificationList.unread_count);
       setSavedSearches(saved);
+      setAiStatus(providerStatus);
     } finally {
       setLoading(false);
     }
@@ -439,6 +442,17 @@ export default function App() {
     }
   }
 
+  async function checkAiStatus() {
+    if (!token) return;
+    try {
+      const status = await api.aiStatus(token, true);
+      setAiStatus(status);
+      setMessage(status.healthy === false ? status.detail : "AI provider checked.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "AI health check failed");
+    }
+  }
+
   async function signOut() {
     const refreshToken = await tokenStorage.getRefresh();
     if (token) await api.logout(token, refreshToken).catch(() => undefined);
@@ -740,6 +754,23 @@ export default function App() {
               <TextInput style={styles.input} value={newPassword} onChangeText={setNewPassword} placeholder="New password" secureTextEntry />
               <Pressable style={styles.button} onPress={savePassword}>
                 <Text style={styles.buttonText}>Change password</Text>
+              </Pressable>
+            </View>
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>AI operations</Text>
+              {aiStatus ? (
+                <>
+                  <Text style={styles.cardTitle}>{aiStatus.provider} {aiStatus.configured ? "configured" : "needs setup"}</Text>
+                  <Text style={styles.muted}>{aiStatus.model} | {aiStatus.embedding_model}</Text>
+                  <Text style={styles.muted}>{aiStatus.embedding_dimensions} dims | {aiStatus.max_context_chars.toLocaleString()} chars | {aiStatus.request_timeout_seconds}s</Text>
+                  <Text style={styles.muted}>PII {aiStatus.pii_redaction_enabled ? "redacted" : "not redacted"} | external PII {aiStatus.external_ai_with_pii_allowed ? "allowed" : "blocked"}</Text>
+                  <Text style={styles.bodyText}>{aiStatus.healthy === null ? aiStatus.detail : `${aiStatus.healthy ? "Healthy" : "Unhealthy"} - ${aiStatus.detail}`}</Text>
+                </>
+              ) : (
+                <Text style={styles.muted}>AI status unavailable.</Text>
+              )}
+              <Pressable style={styles.secondaryButton} onPress={checkAiStatus}>
+                <Text style={styles.secondaryButtonText}>Check AI provider</Text>
               </Pressable>
             </View>
             <View style={styles.card}>

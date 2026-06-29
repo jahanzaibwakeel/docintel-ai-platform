@@ -1,0 +1,55 @@
+services:
+  proxy:
+    image: nginx:1.27-alpine
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ${TLS_CERT_PATH:-./deploy/certs/fullchain.pem}:/etc/nginx/certs/fullchain.pem:ro
+      - ${TLS_KEY_PATH:-./deploy/certs/privkey.pem}:/etc/nginx/certs/privkey.pem:ro
+    restart: unless-stopped
+
+  backend:
+    environment:
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      AI_MAX_CONTEXT_CHARS: ${AI_MAX_CONTEXT_CHARS:-18000}
+      AI_REQUEST_TIMEOUT_SECONDS: ${AI_REQUEST_TIMEOUT_SECONDS:-90}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:?Set FRONTEND_ORIGIN}
+      JSON_LOGS: ${JSON_LOGS:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY}
+    expose:
+      - "8000"
+    ports: !reset []
+
+  frontend:
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?Set NEXT_PUBLIC_API_URL}
+    expose:
+      - "3000"
+    ports: !reset []
+
+  postgres:
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-docintel}
+      POSTGRES_USER: ${POSTGRES_USER:-docintel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    ports: !reset []
+
+  redis:
+    ports: !reset []
+
+  worker:
+    environment:
+      AI_MAX_CONTEXT_CHARS: ${AI_MAX_CONTEXT_CHARS:-18000}
+      AI_REQUEST_TIMEOUT_SECONDS: ${AI_REQUEST_TIMEOUT_SECONDS:-90}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
